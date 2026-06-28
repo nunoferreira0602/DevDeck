@@ -4,43 +4,11 @@
     "url": "https://hnrss.org/frontpage"
   },
   {
-    "name": "InfoQ",
-    "url": "https://feed.infoq.com/RSS/articles/",
-    "notes": "Validate HTTP response carefully — InfoQ has historically returned partial content or redirects"
-  },
-  {
     "name": "Pragmatic Engineer",
-    "url": "https://newsletter.pragmaticengineer.com/feed",
-    "notes": "Substack paywall — free RSS only; raw_content will be snippet-only, Gemini summarizes from title + description"
+    "url": "https://newsletter.pragmaticengineer.com/feed"
   },
   {
     "name": "Martin Fowler",
     "url": "https://martinfowler.com/feed.atom"
-  },
-  {
-    "name": "Latent Space",
-    "url": "https://www.latent.space/feed",
-    "notes": "Substack paywall — free RSS only; raw_content will be snippet-only, Gemini summarizes from title + description"
-  },
-  {
-    "name": "Simon Willison",
-    "url": "https://simonwillison.net/atom/everything/"
-  },
-  {
-    "name": "Netflix Tech Blog",
-    "url": "https://netflixtechblog.com/feed",
-    "notes": "Medium-hosted — RSS content truncated to ~200 words; raw_content will be partial"
-  },
-  {
-    "name": "Stack Overflow Blog",
-    "url": "https://stackoverflow.blog/feed/"
-  },
-  {
-    "name": "The New Stack",
-    "url": "https://thenewstack.io/feed/"
-  },
-  {
-    "name": "Lobsters",
-    "url": "https://lobste.rs/rss"
   }
 ]

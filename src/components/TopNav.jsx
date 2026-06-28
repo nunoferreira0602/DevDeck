@@ -1,6 +1,8 @@
 const TABS = [
   { id: 'feed', label: 'News Feed' },
+  { id: 'saved', label: 'Saved' },
   { id: 'knowledge', label: 'Knowledge Base' },
+  { id: 'projects', label: 'My Projects' },
 ]
 
 export default function TopNav({ activeTab, onTabChange }) {

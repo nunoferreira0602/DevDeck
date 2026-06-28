@@ -1,99 +1,198 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { fetchFeed } from '../lib/fetchFeed'
 import ArticleCard from './ArticleCard'
-import CategoryFilter from './CategoryFilter'
+import feeds from '../../scripts/feeds.json'
 
-function sortArticles(articles, sortBy) {
-  const sorted = [...articles]
-  if (sortBy === 'relevance') {
-    sorted.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0))
-  } else if (sortBy === 'date') {
-    sorted.sort((a, b) => new Date(b.published_at ?? 0) - new Date(a.published_at ?? 0))
-  } else if (sortBy === 'source') {
-    sorted.sort((a, b) => a.source.localeCompare(b.source))
+function buildFeedUrl(feedUrl, search) {
+  if (!search.trim()) return feedUrl
+  if (feedUrl.includes('hnrss.org')) {
+    const u = new URL(feedUrl)
+    u.searchParams.set('q', search.trim())
+    return u.toString()
   }
-  return sorted
+  return feedUrl
+}
+
+const PAGE_SIZE = 5
+
+function FeedSection({ feed, savedUrls, onSaved }) {
+  const [search, setSearch] = useState('')
+  const [articles, setArticles] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [fetched, setFetched] = useState(false)
+  const [page, setPage] = useState(1)
+  const searchTimeout = useRef(null)
+  const isHN = feed.url.includes('hnrss.org')
+
+  useEffect(() => {
+    if (!fetched) doFetch()
+  }, [])
+
+  useEffect(() => {
+    if (!fetched) return
+    if (!isHN) return
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(doFetch, 500)
+    return () => clearTimeout(searchTimeout.current)
+  }, [search])
+
+  async function doFetch() {
+    setLoading(true)
+    setError(null)
+    setPage(1)
+    try {
+      const url = buildFeedUrl(feed.url, search)
+      const items = await fetchFeed(url)
+      setArticles(items)
+      setFetched(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSave(article) {
+    if (savedUrls.has(article.url)) return
+    const { error: err } = await supabase
+      .from('saved_articles')
+      .insert({ ...article })
+    if (!err) onSaved(article.url)
+  }
+
+  const filtered =
+    search.trim() && !isHN
+      ? articles.filter(
+          (a) =>
+            a.title.toLowerCase().includes(search.toLowerCase()) ||
+            (a.raw_content ?? '').toLowerCase().includes(search.toLowerCase()),
+        )
+      : articles
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  return (
+    <div>
+      {/* Search */}
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          placeholder={isHN ? 'Search HN…' : 'Filter by keyword…'}
+          className="flex-1 bg-gray-800 text-gray-300 text-sm rounded px-3 py-2 border border-gray-700 placeholder-gray-600 focus:outline-none focus:border-sky-600"
+        />
+        <button
+          onClick={doFetch}
+          disabled={loading}
+          className="px-4 py-2 text-sm rounded bg-gray-800 border border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-50 transition-colors"
+        >
+          {loading ? 'Fetching…' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* Articles */}
+      {loading ? (
+        <div className="flex items-center justify-center h-48 text-gray-500">
+          Fetching articles…
+        </div>
+      ) : error ? (
+        <div className="flex items-center justify-center h-48 text-red-400 text-sm">
+          Failed to fetch: {error}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex items-center justify-center h-48 text-gray-500">
+          No articles found.
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-gray-600">{filtered.length} articles</p>
+            {paginated.map((article) => (
+              <ArticleCard
+                key={article.url}
+                article={article}
+                onSave={handleSave}
+                saved={savedUrls.has(article.url)}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 mt-6">
+              <button
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page === 1}
+                className="px-4 py-1.5 rounded text-sm bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs text-gray-500">{page} / {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page === totalPages}
+                className="px-4 py-1.5 rounded text-sm bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
 }
 
 export default function Feed() {
-  const [articles, setArticles] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  const [category, setCategory] = useState('all')
-  const [highScoreOnly, setHighScoreOnly] = useState(false)
-  const [sortBy, setSortBy] = useState('relevance')
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [visitedTabs, setVisitedTabs] = useState(new Set([0]))
+  const [savedUrls, setSavedUrls] = useState(new Set())
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
-      setError(null)
-
-      let query = supabase
-        .from('articles')
-        .select('*')
-        .order('relevance_score', { ascending: false })
-        .order('published_at', { ascending: false })
-        .limit(100)
-
-      const { data, error: err } = await query
-      if (err) {
-        setError(err.message)
-      } else {
-        setArticles(data ?? [])
-      }
-      setLoading(false)
-    }
-    load()
+    supabase
+      .from('saved_articles')
+      .select('url')
+      .then(({ data }) => {
+        if (data) setSavedUrls(new Set(data.map((r) => r.url)))
+      })
   }, [])
 
-  const filtered = articles
-    .filter((a) => category === 'all' || a.category === category)
-    .filter((a) => !highScoreOnly || (a.relevance_score ?? 0) >= 7)
-
-  const sorted = sortArticles(filtered, sortBy)
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-gray-500">
-        Loading articles...
-      </div>
-    )
+  function handleTabChange(i) {
+    setActiveIndex(i)
+    setVisitedTabs((prev) => new Set([...prev, i]))
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-64 text-red-400">
-        Failed to load articles: {error}
-      </div>
-    )
+  function handleSaved(url) {
+    setSavedUrls((prev) => new Set([...prev, url]))
   }
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-6">
-      <CategoryFilter
-        category={category}
-        onCategory={setCategory}
-        highScoreOnly={highScoreOnly}
-        onHighScore={setHighScoreOnly}
-        sortBy={sortBy}
-        onSort={setSortBy}
-      />
+      <div className="flex gap-1 mb-6 border-b border-gray-800 pb-0">
+        {feeds.map((feed, i) => (
+          <button
+            key={feed.url}
+            onClick={() => handleTabChange(i)}
+            className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
+              activeIndex === i
+                ? 'bg-gray-800 text-gray-100 border border-b-0 border-gray-700'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {feed.name}
+          </button>
+        ))}
+      </div>
 
-      {sorted.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-          <p className="text-lg font-medium text-gray-400">No articles yet</p>
-          <p className="text-sm mt-2">
-            Run <code className="bg-gray-800 px-1 rounded text-sky-400">node scripts/fetch-feeds.js | node scripts/classify-with-gemini.js</code> to populate the feed.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-4 flex flex-col gap-3">
-          <p className="text-xs text-gray-600">{sorted.length} articles</p>
-          {sorted.map((article) => (
-            <ArticleCard key={article.id} article={article} />
-          ))}
-        </div>
+      {feeds.map((feed, i) =>
+        visitedTabs.has(i) ? (
+          <div key={feed.url} className={activeIndex === i ? '' : 'hidden'}>
+            <FeedSection feed={feed} savedUrls={savedUrls} onSaved={handleSaved} />
+          </div>
+        ) : null,
       )}
     </div>
   )

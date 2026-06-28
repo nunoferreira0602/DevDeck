@@ -1,4 +1,4 @@
-name: Fetch & Classify Articles
+name: Fetch Articles
 
 on:
   schedule:
@@ -18,9 +18,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Fetch new articles and classify
-        run: node scripts/fetch-feeds.js | node scripts/classify-with-gemini.js
+      - name: Fetch and store articles
+        run: node scripts/fetch-feeds.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

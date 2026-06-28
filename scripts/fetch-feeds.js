@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 import Parser from 'rss-parser'
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
@@ -13,7 +14,7 @@ const supabase = createClient(
 
 const parser = new Parser({ timeout: 10000 })
 
-export async function fetchNewArticles(feedsOverride = null) {
+export async function fetchAndStore(feedsOverride = null) {
   const feeds = feedsOverride ?? JSON.parse(readFileSync(join(__dirname, 'feeds.json'), 'utf-8'))
 
   const allArticles = []
@@ -36,7 +37,10 @@ export async function fetchNewArticles(feedsOverride = null) {
     }
   }
 
-  if (allArticles.length === 0) return []
+  if (allArticles.length === 0) {
+    console.error('[fetch] No articles found')
+    return
+  }
 
   const urls = allArticles.map((a) => a.url)
   const { data: existing, error } = await supabase
@@ -50,14 +54,21 @@ export async function fetchNewArticles(feedsOverride = null) {
   const newArticles = allArticles.filter((a) => !existingUrls.has(a.url))
 
   console.error(`[fetch] ${newArticles.length} new articles (${allArticles.length - newArticles.length} duplicates skipped)`)
-  return newArticles
+
+  if (newArticles.length === 0) return
+
+  const { error: upsertError } = await supabase
+    .from('articles')
+    .upsert(newArticles, { onConflict: 'url', ignoreDuplicates: true })
+
+  if (upsertError) throw new Error(`Supabase upsert failed: ${upsertError.message}`)
+
+  console.error(`[fetch] Stored ${newArticles.length} articles`)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  fetchNewArticles()
-    .then((articles) => {
-      process.stdout.write(JSON.stringify(articles))
-    })
+  fetchAndStore()
+    .then(() => process.exit(0))
     .catch((err) => {
       console.error('[fetch] Fatal:', err.message)
       process.exit(1)
